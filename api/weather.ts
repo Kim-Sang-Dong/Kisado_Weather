@@ -1,5 +1,3 @@
-import { GoogleGenAI } from "@google/genai";
-
 // === TYPES ===
 interface WeatherCondition {
   id: number;
