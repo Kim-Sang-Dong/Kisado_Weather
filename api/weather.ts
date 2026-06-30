@@ -1,14 +1,5 @@
-import express from 'express';
-import path from 'path';
-import { createServer as createViteServer } from 'vite';
-import { generateMockWeather } from './src/utils/mockGenerator.ts';
-import { WeatherData, CurrentWeather, ForecastItem, WeatherCondition } from './src/types.ts';
-
-// Explicitly load dotenv if not already loaded (though process.env is injected)
-import 'dotenv/config';
-
-const app = express();
-const PORT = 3000;
+import { generateMockWeather } from '../src/utils/mockGenerator.ts';
+import { WeatherData, CurrentWeather, ForecastItem } from '../src/types.ts';
 
 const KOREAN_CITY_MAP: Record<string, string> = {
   '서울': 'Seoul,KR',
@@ -76,7 +67,6 @@ function getSearchQuery(query: string): string {
     return KOREAN_CITY_MAP[normalized];
   }
   
-  // If query contains Hangul and does not have a comma, append ,KR
   if (/[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(trimmed) && !trimmed.includes(',')) {
     return `${trimmed},KR`;
   }
@@ -84,12 +74,21 @@ function getSearchQuery(query: string): string {
   return trimmed;
 }
 
-// API routes
-app.get('/api/weather', async (req, res) => {
+export default async function handler(req: any, res: any) {
+  // CORS Headers for serverless environment if accessed cross-origin
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  // Get city from query
   const city = (req.query.q as string) || 'Seoul';
   let apiKey = process.env.OPENWEATHER_API_KEY;
 
-  // Clean API key (remove surrounding quotes and leading/trailing spaces)
+  // Clean API key (remove quotes and spaces)
   if (apiKey) {
     apiKey = apiKey.trim();
     if (apiKey.startsWith('"') && apiKey.endsWith('"')) {
@@ -106,16 +105,14 @@ app.get('/api/weather', async (req, res) => {
       ? '유효하지 않은 짧은 키' 
       : '없음';
 
-  // Check if API key is missing, empty, or a default placeholder
   const hasRealApiKey = apiKey && apiKey !== 'YOUR_OPENWEATHER_API_KEY' && apiKey.trim() !== '';
 
   if (!hasRealApiKey) {
-    // Generate mock weather
     try {
       const mockData = generateMockWeather(city);
-      return res.json({
+      return res.status(200).json({
         ...mockData,
-        warning: '실시간 날씨 검색을 원하시면 오른쪽 설정 또는 .env 파일에 OPENWEATHER_API_KEY를 설정해주세요. 현재 시뮬레이션 상태입니다. (감지된 키 없음)'
+        warning: '실시간 날씨 검색을 원하시면 설정 또는 .env 파일에 OPENWEATHER_API_KEY를 설정해주세요. 현재 시뮬레이션 상태입니다. (감지된 키 없음)'
       });
     } catch (e) {
       console.error('Error generating mock weather:', e);
@@ -123,7 +120,6 @@ app.get('/api/weather', async (req, res) => {
     }
   }
 
-  // Fetch real OpenWeatherMap data
   try {
     const apiQuery = getSearchQuery(city);
     const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(apiQuery)}&appid=${apiKey}&units=metric&lang=kr`;
@@ -139,10 +135,9 @@ app.get('/api/weather', async (req, res) => {
         return res.status(404).json({ error: `도시 '${city}'를 찾을 수 없습니다.` });
       }
       if (weatherRes.status === 401 || weatherRes.status === 403) {
-        console.warn(`[Weather API Warning] OpenWeatherMap returned status ${weatherRes.status}. Falling back to simulation mode.`);
         try {
           const fallbackMock = generateMockWeather(city);
-          return res.json({
+          return res.status(200).json({
             ...fallbackMock,
             isDemo: true,
             apiError: true,
@@ -162,7 +157,6 @@ app.get('/api/weather', async (req, res) => {
     const weatherData = await weatherRes.json();
     const forecastData = await forecastRes.json();
 
-    // Map to unified schema
     const current: CurrentWeather = {
       city: weatherData.name,
       country: weatherData.sys.country,
@@ -206,13 +200,12 @@ app.get('/api/weather', async (req, res) => {
       forecast,
     };
 
-    return res.json(result);
+    return res.status(200).json(result);
   } catch (error: any) {
     console.error('Error fetching OpenWeatherMap API:', error);
-    // Fall back to mock weather if OpenWeatherMap query fails, but flag it
     try {
       const fallbackMock = generateMockWeather(city);
-      return res.json({
+      return res.status(200).json({
         ...fallbackMock,
         isDemo: true,
         warning: '실시간 API 호출에 실패하여 데모 모드로 표시됩니다. 인터넷 연결 혹은 API 키 상태를 확인하세요.',
@@ -221,27 +214,4 @@ app.get('/api/weather', async (req, res) => {
       return res.status(500).json({ error: '서버 에러가 발생했습니다. 잠시 후 다시 시도해 주세요.' });
     }
   }
-});
-
-// Vite middleware configuration for serving frontend
-async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
 }
-
-startServer();

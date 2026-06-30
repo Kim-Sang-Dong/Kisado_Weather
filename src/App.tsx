@@ -160,7 +160,7 @@ export default function App() {
                       ? '⚠️ 시뮬레이션 모드 활성화 중' 
                       : '🔌 실시간 API 가동 중'}
                 </h4>
-                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-line">
                   {weather.warning 
                     ? weather.warning 
                     : weather.isDemo 
